@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
 
 import { ensureAdmin } from "@/lib/admin-session";
 import { drawWinnersForRaffle } from "@/lib/draw";
@@ -71,6 +72,48 @@ async function uploadLogoFile(file: File, prefix: "home" | "away") {
   return `/uploads/raffle-logos/${filename}`;
 }
 
+function isUniqueSlugError(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+    return false;
+  }
+
+  if (error.code !== "P2002") {
+    return false;
+  }
+
+  const target = error.meta?.target;
+  if (Array.isArray(target)) {
+    return target.includes("slug");
+  }
+
+  return target === "slug";
+}
+
+async function findAvailableRaffleSlug(baseSlug: string) {
+  const existing = await prisma.raffle.findMany({
+    where: {
+      slug: {
+        startsWith: baseSlug
+      }
+    },
+    select: {
+      slug: true
+    }
+  });
+
+  const usedSlugs = new Set(existing.map((item) => item.slug));
+  if (!usedSlugs.has(baseSlug)) {
+    return baseSlug;
+  }
+
+  let suffix = 2;
+  while (usedSlugs.has(`${baseSlug}-${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${baseSlug}-${suffix}`;
+}
+
 export async function upsertSheetsConfigAction(formData: FormData) {
   await ensureAdmin();
 
@@ -133,9 +176,9 @@ export async function createRaffleAction(formData: FormData) {
     throw new Error("Dragningstid måste vara efter eller lika med stängningstid");
   }
 
-  const slug = normalizeSlug(explicitSlug || matchName);
+  const slugBase = normalizeSlug(explicitSlug || matchName);
 
-  if (!slug) {
+  if (!slugBase) {
     throw new Error("Kunde inte skapa slug");
   }
 
@@ -149,23 +192,54 @@ export async function createRaffleAction(formData: FormData) {
     ? await uploadLogoFile(awayLogoFileInput, "away")
     : awayLogoUrlInput || null;
 
-  const raffle = await prisma.raffle.create({
-    data: {
-      slug,
-      matchName,
-      logoUrl: logoUrl || null,
-      homeLogoUrl,
-      awayLogoUrl,
-      matchDate: parsedMatchDate,
-      arena: arena || null,
-      description: description || null,
-      openAt: parsedOpen,
-      closeAt: parsedClose,
-      drawAt: parsedDraw,
-      numberOfWinners: Math.max(1, Math.floor(numberOfWinners || 1)),
-      status: statusInput as RaffleStatus
+  let slug = await findAvailableRaffleSlug(slugBase);
+
+  const raffle = await (async () => {
+    try {
+      return await prisma.raffle.create({
+        data: {
+          slug,
+          matchName,
+          logoUrl: logoUrl || null,
+          homeLogoUrl,
+          awayLogoUrl,
+          matchDate: parsedMatchDate,
+          arena: arena || null,
+          description: description || null,
+          openAt: parsedOpen,
+          closeAt: parsedClose,
+          drawAt: parsedDraw,
+          numberOfWinners: Math.max(1, Math.floor(numberOfWinners || 1)),
+          status: statusInput as RaffleStatus
+        }
+      });
+    } catch (error) {
+      if (!isUniqueSlugError(error)) {
+        throw error;
+      }
+
+      // Safety retry if another admin created a raffle with the same slug at the same time.
+      slug = await findAvailableRaffleSlug(slugBase);
+
+      return prisma.raffle.create({
+        data: {
+          slug,
+          matchName,
+          logoUrl: logoUrl || null,
+          homeLogoUrl,
+          awayLogoUrl,
+          matchDate: parsedMatchDate,
+          arena: arena || null,
+          description: description || null,
+          openAt: parsedOpen,
+          closeAt: parsedClose,
+          drawAt: parsedDraw,
+          numberOfWinners: Math.max(1, Math.floor(numberOfWinners || 1)),
+          status: statusInput as RaffleStatus
+        }
+      });
     }
-  });
+  })();
 
   await prisma.adminAuditLog.create({
     data: {
