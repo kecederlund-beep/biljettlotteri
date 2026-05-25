@@ -34,22 +34,22 @@ model Raffle {
 }
 
 model RaffleEntry {
-  id                 String             @id @default(cuid())
-  raffleId           String
+  id                       String       @id @default(cuid())
+  raffleId                 String
   submittedMembershipNumber String      @default("")
-  submittedEmail     String             @default("")
-  submittedLastName  String             @default("")
-  submittedPhone     String             @default("")
-  membershipNumber   String
-  lastName           String
-  phoneLast7         String
-  verifiedAt         DateTime?
-  verificationStatus String   @default("PENDING")
-  verificationMatchReason String?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  raffle             Raffle             @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-  winner             RaffleWinner?
+  submittedEmail           String       @default("")
+  submittedLastName        String       @default("")
+  submittedPhone           String       @default("")
+  membershipNumber         String
+  lastName                 String
+  phoneLast7               String
+  verifiedAt               DateTime?
+  verificationStatus       String       @default("PENDING")
+  verificationMatchReason  String?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+  raffle                   Raffle       @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  winner                   RaffleWinner?
 
   @@unique([raffleId, membershipNumber])
   @@unique([raffleId, submittedEmail])
@@ -57,14 +57,14 @@ model RaffleEntry {
 }
 
 model MembershipRegistry {
-  id              String           @id @default(cuid())
-  membershipNumber String          @unique
-  lastName        String
-  phoneLast7      String
-  status          String @default("ACTIVE")
-  sourceUpdatedAt DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id               String   @id @default(cuid())
+  membershipNumber String   @unique
+  lastName         String
+  phoneLast7       String
+  status           String   @default("ACTIVE")
+  sourceUpdatedAt  DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([membershipNumber, status])
 }
