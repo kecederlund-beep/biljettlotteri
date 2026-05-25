@@ -114,6 +114,29 @@ async function findAvailableRaffleSlug(baseSlug: string) {
   return `${baseSlug}-${suffix}`;
 }
 
+function mapCreateRaffleError(error: unknown) {
+  if (isUniqueSlugError(error)) {
+    return "Ett lotteri med liknande adress finns redan. Ange en unik slug och försök igen.";
+  }
+
+  if (error instanceof Error) {
+    const lowered = error.message.toLocaleLowerCase("sv-SE");
+
+    if (
+      lowered.includes("read-only file system") ||
+      lowered.includes("erofs") ||
+      lowered.includes("eacces") ||
+      lowered.includes("eperm")
+    ) {
+      return "Filuppladdning av logotyper stöds inte i denna driftmiljö just nu. Använd logotyp-URL.";
+    }
+
+    return error.message;
+  }
+
+  return "Kunde inte skapa lotteriet just nu. Försök igen.";
+}
+
 export async function upsertSheetsConfigAction(formData: FormData) {
   await ensureAdmin();
 
@@ -139,121 +162,126 @@ export async function syncRegistryAction() {
 export async function createRaffleAction(formData: FormData) {
   await ensureAdmin();
 
-  const matchName = String(formData.get("matchName") ?? "").trim();
-  const logoUrl = String(formData.get("logoUrl") ?? "").trim();
-  const homeLogoUrlInput = String(formData.get("homeLogoUrl") ?? "").trim();
-  const awayLogoUrlInput = String(formData.get("awayLogoUrl") ?? "").trim();
-  const homeLogoFileInput = formData.get("homeLogoFile");
-  const awayLogoFileInput = formData.get("awayLogoFile");
-  const matchDate = String(formData.get("matchDate") ?? "").trim();
-  const arena = String(formData.get("arena") ?? "").trim();
-  const description = String(formData.get("description") ?? "").trim();
-  const openAt = String(formData.get("openAt") ?? "").trim();
-  const closeAt = String(formData.get("closeAt") ?? "").trim();
-  const drawAt = String(formData.get("drawAt") ?? "").trim();
-  const numberOfWinners = Number(formData.get("numberOfWinners") ?? 1);
-  const statusInput = String(formData.get("status") ?? "DRAFT");
-  const explicitSlug = String(formData.get("slug") ?? "").trim();
+  try {
+    const matchName = String(formData.get("matchName") ?? "").trim();
+    const logoUrl = String(formData.get("logoUrl") ?? "").trim();
+    const homeLogoUrlInput = String(formData.get("homeLogoUrl") ?? "").trim();
+    const awayLogoUrlInput = String(formData.get("awayLogoUrl") ?? "").trim();
+    const homeLogoFileInput = formData.get("homeLogoFile");
+    const awayLogoFileInput = formData.get("awayLogoFile");
+    const matchDate = String(formData.get("matchDate") ?? "").trim();
+    const arena = String(formData.get("arena") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+    const openAt = String(formData.get("openAt") ?? "").trim();
+    const closeAt = String(formData.get("closeAt") ?? "").trim();
+    const drawAt = String(formData.get("drawAt") ?? "").trim();
+    const numberOfWinners = Number(formData.get("numberOfWinners") ?? 1);
+    const statusInput = String(formData.get("status") ?? "DRAFT");
+    const explicitSlug = String(formData.get("slug") ?? "").trim();
 
-  if (!matchName || !openAt || !closeAt || !drawAt || !matchDate) {
-    throw new Error("Saknade fält vid skapande av lotteri");
-  }
+    if (!matchName || !openAt || !closeAt || !drawAt || !matchDate) {
+      throw new Error("Saknade fält vid skapande av lotteri");
+    }
 
-  if (!Object.values(RAFFLE_STATUS).includes(statusInput as RaffleStatus)) {
-    throw new Error("Ogiltig status");
-  }
+    if (!Object.values(RAFFLE_STATUS).includes(statusInput as RaffleStatus)) {
+      throw new Error("Ogiltig status");
+    }
 
-  const parsedOpen = parseDateTimeLocal(openAt, "Öppningstid");
-  const parsedClose = parseDateTimeLocal(closeAt, "Stängningstid");
-  const parsedDraw = parseDateTimeLocal(drawAt, "Dragningstid");
-  const parsedMatchDate = parseDateTimeLocal(matchDate, "Matchdatum");
+    const parsedOpen = parseDateTimeLocal(openAt, "Öppningstid");
+    const parsedClose = parseDateTimeLocal(closeAt, "Stängningstid");
+    const parsedDraw = parseDateTimeLocal(drawAt, "Dragningstid");
+    const parsedMatchDate = parseDateTimeLocal(matchDate, "Matchdatum");
 
-  if (parsedClose <= parsedOpen) {
-    throw new Error("Stängningstid måste vara efter öppningstid");
-  }
+    if (parsedClose <= parsedOpen) {
+      throw new Error("Stängningstid måste vara efter öppningstid");
+    }
 
-  if (parsedDraw < parsedClose) {
-    throw new Error("Dragningstid måste vara efter eller lika med stängningstid");
-  }
+    if (parsedDraw < parsedClose) {
+      throw new Error("Dragningstid måste vara efter eller lika med stängningstid");
+    }
 
-  const slugBase = normalizeSlug(explicitSlug || matchName);
+    const slugBase = normalizeSlug(explicitSlug || matchName);
 
-  if (!slugBase) {
-    throw new Error("Kunde inte skapa slug");
-  }
+    if (!slugBase) {
+      throw new Error("Kunde inte skapa slug");
+    }
 
-  const hasHomeLogoUpload = homeLogoFileInput instanceof File && homeLogoFileInput.size > 0;
-  const hasAwayLogoUpload = awayLogoFileInput instanceof File && awayLogoFileInput.size > 0;
+    const hasHomeLogoUpload = homeLogoFileInput instanceof File && homeLogoFileInput.size > 0;
+    const hasAwayLogoUpload = awayLogoFileInput instanceof File && awayLogoFileInput.size > 0;
 
-  const homeLogoUrl = hasHomeLogoUpload
-    ? await uploadLogoFile(homeLogoFileInput, "home")
-    : homeLogoUrlInput || null;
-  const awayLogoUrl = hasAwayLogoUpload
-    ? await uploadLogoFile(awayLogoFileInput, "away")
-    : awayLogoUrlInput || null;
+    const homeLogoUrl = hasHomeLogoUpload
+      ? await uploadLogoFile(homeLogoFileInput, "home")
+      : homeLogoUrlInput || null;
+    const awayLogoUrl = hasAwayLogoUpload
+      ? await uploadLogoFile(awayLogoFileInput, "away")
+      : awayLogoUrlInput || null;
 
-  let slug = await findAvailableRaffleSlug(slugBase);
+    let slug = await findAvailableRaffleSlug(slugBase);
 
-  const raffle = await (async () => {
-    try {
-      return await prisma.raffle.create({
-        data: {
-          slug,
-          matchName,
-          logoUrl: logoUrl || null,
-          homeLogoUrl,
-          awayLogoUrl,
-          matchDate: parsedMatchDate,
-          arena: arena || null,
-          description: description || null,
-          openAt: parsedOpen,
-          closeAt: parsedClose,
-          drawAt: parsedDraw,
-          numberOfWinners: Math.max(1, Math.floor(numberOfWinners || 1)),
-          status: statusInput as RaffleStatus
+    const raffle = await (async () => {
+      try {
+        return await prisma.raffle.create({
+          data: {
+            slug,
+            matchName,
+            logoUrl: logoUrl || null,
+            homeLogoUrl,
+            awayLogoUrl,
+            matchDate: parsedMatchDate,
+            arena: arena || null,
+            description: description || null,
+            openAt: parsedOpen,
+            closeAt: parsedClose,
+            drawAt: parsedDraw,
+            numberOfWinners: Math.max(1, Math.floor(numberOfWinners || 1)),
+            status: statusInput as RaffleStatus
+          }
+        });
+      } catch (error) {
+        if (!isUniqueSlugError(error)) {
+          throw error;
         }
-      });
-    } catch (error) {
-      if (!isUniqueSlugError(error)) {
-        throw error;
+
+        // Safety retry if another admin created a raffle with the same slug at the same time.
+        slug = await findAvailableRaffleSlug(slugBase);
+
+        return prisma.raffle.create({
+          data: {
+            slug,
+            matchName,
+            logoUrl: logoUrl || null,
+            homeLogoUrl,
+            awayLogoUrl,
+            matchDate: parsedMatchDate,
+            arena: arena || null,
+            description: description || null,
+            openAt: parsedOpen,
+            closeAt: parsedClose,
+            drawAt: parsedDraw,
+            numberOfWinners: Math.max(1, Math.floor(numberOfWinners || 1)),
+            status: statusInput as RaffleStatus
+          }
+        });
       }
+    })();
 
-      // Safety retry if another admin created a raffle with the same slug at the same time.
-      slug = await findAvailableRaffleSlug(slugBase);
+    await prisma.adminAuditLog.create({
+      data: {
+        action: "raffle.create",
+        raffleId: raffle.id,
+        details: `Skapade lotteri ${raffle.slug}`,
+        actor: "admin"
+      }
+    });
 
-      return prisma.raffle.create({
-        data: {
-          slug,
-          matchName,
-          logoUrl: logoUrl || null,
-          homeLogoUrl,
-          awayLogoUrl,
-          matchDate: parsedMatchDate,
-          arena: arena || null,
-          description: description || null,
-          openAt: parsedOpen,
-          closeAt: parsedClose,
-          drawAt: parsedDraw,
-          numberOfWinners: Math.max(1, Math.floor(numberOfWinners || 1)),
-          status: statusInput as RaffleStatus
-        }
-      });
-    }
-  })();
-
-  await prisma.adminAuditLog.create({
-    data: {
-      action: "raffle.create",
-      raffleId: raffle.id,
-      details: `Skapade lotteri ${raffle.slug}`,
-      actor: "admin"
-    }
-  });
-
-  revalidatePath("/admin");
-  revalidatePath("/");
-  revalidatePath(`/raffles/${slug}`);
-  redirect("/admin?created=1");
+    revalidatePath("/admin");
+    revalidatePath("/");
+    revalidatePath(`/raffles/${slug}`);
+    redirect("/admin?created=1");
+  } catch (error) {
+    const message = mapCreateRaffleError(error);
+    redirect(`/admin?error=${encodeURIComponent(message)}`);
+  }
 }
 
 export async function updateRaffleLogosAction(formData: FormData) {

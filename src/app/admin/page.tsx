@@ -77,6 +77,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </section>
         )}
 
+        {params.error ? (
+          <section className="notice">
+            {Array.isArray(params.error) ? params.error[0] : params.error}
+          </section>
+        ) : null}
+
         <section className="card grid" style={{ gap: 16 }}>
           <div className="panel-title">
             <h2>Medlemsregister (Google Sheets)</h2>
