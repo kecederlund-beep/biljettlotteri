@@ -7,3 +7,11 @@ coverage
 prisma/dev.db
 prisma/dev.db-journal
 .DS_Store
+
+# OpenNext
+.open-next
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
