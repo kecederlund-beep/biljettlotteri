@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Raffle {
+  id                   String         @id @default(cuid())
+  slug                 String         @unique
+  matchName            String
+  logoUrl              String?
+  homeLogoUrl          String?
+  awayLogoUrl          String?
+  matchDate            DateTime
+  description          String?
+  arena                String?
+  openAt               DateTime
+  closeAt              DateTime
+  drawAt               DateTime
+  numberOfWinners      Int            @default(1)
+  status               String         @default("DRAFT")
+  winnersPublicVisible Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  entries              RaffleEntry[]
+  winners              RaffleWinner[]
+  adminLogs            AdminAuditLog[]
+
+  @@index([status, openAt, closeAt])
+}
+
+model RaffleEntry {
+  id                 String             @id @default(cuid())
+  raffleId           String
+  submittedMembershipNumber String      @default("")
+  submittedEmail     String             @default("")
+  submittedLastName  String             @default("")
+  submittedPhone     String             @default("")
+  membershipNumber   String
+  lastName           String
+  phoneLast7         String
+  verifiedAt         DateTime?
+  verificationStatus String   @default("PENDING")
+  verificationMatchReason String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  raffle             Raffle             @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  winner             RaffleWinner?
+
+  @@unique([raffleId, membershipNumber])
+  @@unique([raffleId, submittedEmail])
+  @@index([raffleId, verificationStatus])
+}
+
+model MembershipRegistry {
+  id              String           @id @default(cuid())
+  membershipNumber String          @unique
+  lastName        String
+  phoneLast7      String
+  status          String @default("ACTIVE")
+  sourceUpdatedAt DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([membershipNumber, status])
+}
+
+model RaffleWinner {
+  id               String      @id @default(cuid())
+  raffleId         String
+  raffleEntryId    String      @unique
+  membershipNumber String
+  position         Int
+  drawnAt          DateTime    @default(now())
+  publishedAt      DateTime?
+  raffle           Raffle      @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  raffleEntry      RaffleEntry @relation(fields: [raffleEntryId], references: [id], onDelete: Cascade)
+
+  @@unique([raffleId, membershipNumber])
+  @@index([raffleId, position])
+}
+
+model MembershipSourceConfig {
+  id                Int      @id
+  sheetId           String?
+  sheetTab          String?
+  apiKey            String?
+  headerRow         Int      @default(1)
+  lastSyncAt        DateTime?
+  lastSyncStatus    String?
+  lastImportedCount Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model RateLimitEvent {
+  id        String   @id @default(cuid())
+  key       String
+  action    String
+  createdAt DateTime @default(now())
+
+  @@index([key, action, createdAt])
+}
+
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  details   String?
+  actor     String?
+  raffleId  String?
+  createdAt DateTime @default(now())
+  raffle    Raffle?  @relation(fields: [raffleId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt, action])
+}
